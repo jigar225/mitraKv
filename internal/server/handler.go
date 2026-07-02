@@ -49,6 +49,12 @@ func (s *Server) dispatch(cmd protocol.Command) string {
 		if len(cmd.Args) != 2 {
 			return protocol.FormatError("wrong number of arguments for SET")
 		}
+		if s.wal != nil {
+			if err := s.wal.AppendSet(cmd.Args[0], cmd.Args[1]); err != nil {
+				slog.Error("wal append set failed", "err", err, "key", cmd.Args[0])
+				return protocol.FormatError("failed to persist write")
+			}
+		}
 		s.store.Set(cmd.Args[0], cmd.Args[1])
 		return protocol.FormatOK()
 	case "GET":
@@ -62,6 +68,12 @@ func (s *Server) dispatch(cmd protocol.Command) string {
 	case "DEL":
 		if len(cmd.Args) != 1 {
 			return protocol.FormatError("wrong number of arguments for DEL")
+		}
+		if s.wal != nil {
+			if err := s.wal.AppendDel(cmd.Args[0]); err != nil {
+				slog.Error("wal append del failed", "err", err, "key", cmd.Args[0])
+				return protocol.FormatError("failed to persist write")
+			}
 		}
 		s.store.Del(cmd.Args[0])
 		return protocol.FormatOK()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jigar/mitrakv/internal/metrics"
 	"github.com/jigar/mitrakv/internal/store"
+	"github.com/jigar/mitrakv/internal/wal"
 )
 
 // Server accepts TCP connections and serves the MitraKV wire protocol.
@@ -16,14 +17,16 @@ type Server struct {
 	addr    string
 	store   *store.Store
 	metrics *metrics.Recorder
+	wal     *wal.Log
 }
 
 // New creates a server bound to addr (e.g. ":6379").
-func New(addr string, st *store.Store, recorder *metrics.Recorder) *Server {
+func New(addr string, st *store.Store, recorder *metrics.Recorder, writeAheadLog *wal.Log) *Server {
 	return &Server{
 		addr:    addr,
 		store:   st,
 		metrics: recorder,
+		wal:     writeAheadLog,
 	}
 }
 
