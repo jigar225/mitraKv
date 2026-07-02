@@ -1,3 +1,5 @@
+# runtime data (WAL files)
+data/
 
 # local planning docs
 PROGRESS.md

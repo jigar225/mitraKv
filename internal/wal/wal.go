@@ -113,6 +113,12 @@ func ParseLine(line string) (Entry, error) {
 		return Entry{}, fmt.Errorf("parse wal timestamp: %w", err)
 	}
 
+	switch parts[1] {
+	case opSet, opDel:
+	default:
+		return Entry{}, fmt.Errorf("unknown wal operation %q", parts[1])
+	}
+
 	keyBytes, err := base64.StdEncoding.DecodeString(parts[2])
 	if err != nil {
 		return Entry{}, fmt.Errorf("decode wal key: %w", err)

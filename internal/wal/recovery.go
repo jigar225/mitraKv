@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jigar/mitrakv/internal/store"
 )
@@ -25,8 +26,13 @@ func Replay(dataDir string, st *store.Store) error {
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
 		lineNum++
-		entry, parseErr := ParseLine(scanner.Text())
+		entry, parseErr := ParseLine(line)
 		if parseErr != nil {
 			return fmt.Errorf("parse wal line %d: %w", lineNum, parseErr)
 		}
