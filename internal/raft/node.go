@@ -7,10 +7,11 @@ import (
 
 // Config holds node identity and timing knobs used by the Raft state machine.
 type Config struct {
-	NodeID            string
-	Peers             []string
-	ElectionTimeout   time.Duration
-	HeartbeatInterval time.Duration
+	NodeID             string
+	Peers              []string
+	ElectionTimeoutMin time.Duration
+	ElectionTimeoutMax time.Duration
+	HeartbeatInterval  time.Duration
 }
 
 // Node is a single Raft peer. It owns persistent log state and role transitions.
@@ -22,11 +23,16 @@ type Node struct {
 	state       State
 	currentTerm uint64
 	votedFor    string
+	leaderID    string
 
 	log *Log
 
 	commitIndex uint64
 	lastApplied uint64
+
+	transport     Transport
+	electionReset chan struct{}
+	applier       ApplyFunc
 
 	// leaderState tracks per-follower replication progress (leader only).
 	nextIndex  map[string]uint64
@@ -38,16 +44,20 @@ func NewNode(cfg Config) *Node {
 	if cfg.HeartbeatInterval == 0 {
 		cfg.HeartbeatInterval = 50 * time.Millisecond
 	}
-	if cfg.ElectionTimeout == 0 {
-		cfg.ElectionTimeout = 200 * time.Millisecond
+	if cfg.ElectionTimeoutMin == 0 {
+		cfg.ElectionTimeoutMin = 150 * time.Millisecond
+	}
+	if cfg.ElectionTimeoutMax == 0 {
+		cfg.ElectionTimeoutMax = 300 * time.Millisecond
 	}
 
 	return &Node{
-		cfg:        cfg,
-		state:      Follower,
-		log:        NewLog(),
-		nextIndex:  make(map[string]uint64),
-		matchIndex: make(map[string]uint64),
+		cfg:           cfg,
+		state:         Follower,
+		log:           NewLog(),
+		electionReset: make(chan struct{}, 1),
+		nextIndex:     make(map[string]uint64),
+		matchIndex:    make(map[string]uint64),
 	}
 }
 

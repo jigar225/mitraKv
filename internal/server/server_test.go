@@ -23,7 +23,7 @@ func TestServerTCPFlow(t *testing.T) {
 		t.Fatalf("create metrics recorder: %v", err)
 	}
 
-	srv := New(addr, store.New(), recorder, nil)
+	srv := New(addr, store.New(), recorder, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

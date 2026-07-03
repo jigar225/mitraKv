@@ -46,7 +46,7 @@ func bootServer(t *testing.T, addr, dataDir string) context.CancelFunc {
 		t.Fatalf("create metrics recorder: %v", err)
 	}
 
-	srv := New(addr, st, recorder, writeAheadLog)
+	srv := New(addr, st, recorder, writeAheadLog, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	serverErr := make(chan error, 1)

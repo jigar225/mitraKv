@@ -3,11 +3,13 @@ package server
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"time"
 
 	"github.com/jigar/mitrakv/internal/protocol"
+	"github.com/jigar/mitrakv/internal/raft"
 	"github.com/jigar/mitrakv/internal/store"
 )
 
@@ -49,6 +51,9 @@ func (s *Server) dispatch(cmd protocol.Command) string {
 		if len(cmd.Args) != 2 {
 			return protocol.FormatError("wrong number of arguments for SET")
 		}
+		if s.raft != nil {
+			return s.proposeWrite(raft.Command{Op: raft.OpSet, Key: cmd.Args[0], Value: cmd.Args[1]})
+		}
 		if s.wal != nil {
 			if err := s.wal.AppendSet(cmd.Args[0], cmd.Args[1]); err != nil {
 				slog.Error("wal append set failed", "err", err, "key", cmd.Args[0])
@@ -69,6 +74,9 @@ func (s *Server) dispatch(cmd protocol.Command) string {
 		if len(cmd.Args) != 1 {
 			return protocol.FormatError("wrong number of arguments for DEL")
 		}
+		if s.raft != nil {
+			return s.proposeWrite(raft.Command{Op: raft.OpDel, Key: cmd.Args[0]})
+		}
 		if s.wal != nil {
 			if err := s.wal.AppendDel(cmd.Args[0]); err != nil {
 				slog.Error("wal append del failed", "err", err, "key", cmd.Args[0])
@@ -85,4 +93,15 @@ func (s *Server) dispatch(cmd protocol.Command) string {
 // Store returns the underlying store for tests.
 func (s *Server) Store() *store.Store {
 	return s.store
+}
+
+func (s *Server) proposeWrite(cmd raft.Command) string {
+	if err := s.raft.Propose(cmd); err != nil {
+		if errors.Is(err, raft.ErrNotLeader) {
+			return protocol.FormatError("not leader")
+		}
+		slog.Error("raft propose failed", "err", err, "op", cmd.Op, "key", cmd.Key)
+		return protocol.FormatError("failed to replicate write")
+	}
+	return protocol.FormatOK()
 }

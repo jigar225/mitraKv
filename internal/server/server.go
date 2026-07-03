@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/jigar/mitrakv/internal/metrics"
+	"github.com/jigar/mitrakv/internal/raft"
 	"github.com/jigar/mitrakv/internal/store"
 	"github.com/jigar/mitrakv/internal/wal"
 )
@@ -18,15 +19,17 @@ type Server struct {
 	store   *store.Store
 	metrics *metrics.Recorder
 	wal     *wal.Log
+	raft    *raft.Node
 }
 
 // New creates a server bound to addr (e.g. ":6379").
-func New(addr string, st *store.Store, recorder *metrics.Recorder, writeAheadLog *wal.Log) *Server {
+func New(addr string, st *store.Store, recorder *metrics.Recorder, writeAheadLog *wal.Log, raftNode *raft.Node) *Server {
 	return &Server{
 		addr:    addr,
 		store:   st,
 		metrics: recorder,
 		wal:     writeAheadLog,
+		raft:    raftNode,
 	}
 }
 

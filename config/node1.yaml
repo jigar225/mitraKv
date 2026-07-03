@@ -1,0 +1,9 @@
+node_id: node1
+client_port: 6379
+raft_port: 7379
+metrics_port: 9090
+data_dir: ./data/node1
+peers:
+  - node1: 127.0.0.1:7379
+  - node2: 127.0.0.1:7380
+  - node3: 127.0.0.1:7381

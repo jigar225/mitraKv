@@ -35,14 +35,14 @@ const (
 
 // Command is the payload applied to the KV store once an entry is committed.
 type Command struct {
-	Op    Op
-	Key   string
-	Value string
+	Op    Op     `json:"op"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // LogEntry is one durable Raft log record. The index is 1-based to match Raft papers.
 type LogEntry struct {
-	Index   uint64
-	Term    uint64
-	Command Command
+	Index   uint64  `json:"index"`
+	Term    uint64  `json:"term"`
+	Command Command `json:"command"`
 }

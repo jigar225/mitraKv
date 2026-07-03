@@ -1,0 +1,9 @@
+node_id: node3
+client_port: 6381
+raft_port: 7381
+metrics_port: 9092
+data_dir: ./data/node3
+peers:
+  - node1: 127.0.0.1:7379
+  - node2: 127.0.0.1:7380
+  - node3: 127.0.0.1:7381
