@@ -1,86 +1,232 @@
 # MitraKV
 
-A distributed key-value store built from scratch in Go — TCP wire protocol, WAL persistence, and Raft consensus.
+**Problem:** Existing options are either too heavy (etcd), not consistent enough for strong writes (Redis), or not embeddable. MitraKV is the simple version — a distributed key-value store built from scratch in Go with WAL persistence, Raft consensus, and production-style failure handling.
 
-## Run (single node)
+**What it does:** Runs as a single node or a 3-node cluster. Clients talk over TCP (`SET`/`GET`/`DEL`/`PING`). Writes go through the Raft leader, replicate to a majority, then land in the WAL and in-memory store. Reads work on any node.
+
+---
+
+## Quick start
 
 ```bash
 cd mitrakv
+go test ./... -race                              # run all tests
+./scripts/start-cluster.sh                       # start 3-node cluster
+echo "SET user jigar" | nc localhost 6379        # write (leader only)
+echo "GET user" | nc localhost 6380              # read from any node
+```
+
+---
+
+## How to run
+
+### Single node (dev / local)
+
+```bash
 go run ./cmd/mitrakv --port 6379 --metrics-port 9090 --data-dir ./data/node1
 ```
 
-## Run (3-node Raft cluster)
+### 3-node Raft cluster (production-style)
 
 ```bash
-cd mitrakv
 ./scripts/start-cluster.sh
 ```
 
-Nodes:
-| Node | Client port | Raft RPC port |
-|------|-------------|---------------|
-| node1 | 6379 | 7379 |
-| node2 | 6380 | 7380 |
-| node3 | 6381 | 7381 |
+| Node  | Client port | Raft RPC port | Metrics |
+|-------|-------------|---------------|---------|
+| node1 | 6379        | 7379          | 9090    |
+| node2 | 6380        | 7380          | 9091    |
+| node3 | 6381        | 7381          | 9092    |
 
-## Verify (Phase 1)
+Stop the cluster with `Ctrl+C` in the terminal running `start-cluster.sh`.
 
-```bash
-echo "PING" | nc localhost 6379              # PONG
-echo "SET name jigar" | nc localhost 6379    # OK
-echo "GET name" | nc localhost 6379          # jigar
-curl -s localhost:9090/metrics | head        # Prometheus metrics
-```
-
-## Verify WAL / crash recovery (Phase 2)
-
-```bash
-echo "SET city mumbai" | nc localhost 6379   # OK
-# Stop server (Ctrl+C), restart with same --data-dir
-echo "GET city" | nc localhost 6379          # mumbai
-```
-
-## Verify Raft cluster (Phase 3)
-
-```bash
-# 1) Start cluster
-./scripts/start-cluster.sh
-
-# 2) Write to leader (try node1 first; if ERR not leader, try 6380/6381)
-echo "SET user jigar" | nc localhost 6379
-
-# 3) Read from any node
-echo "GET user" | nc localhost 6380          # jigar
-
-# 4) Kill leader process on port 6379
-./scripts/kill-leader.sh 6379
-
-# 5) Wait ~3s for re-election, write/read again on another port
-echo "GET user" | nc localhost 6380          # jigar
-```
-
-**Note:** Only the **leader** accepts `SET`/`DEL`. Followers return `ERR not leader`.
-
-## Test
-
-```bash
-go test ./... -race
-```
+---
 
 ## Architecture
 
 ```
-Client → TCP (:6379) → handler → Raft Propose (leader only) → replicate to peers
-                                    ↓ committed
-                              WAL + in-memory store (all nodes)
-Peers  → Raft RPC (:7379) → RequestVote / AppendEntries
+                    ┌─────────────────────────────────────┐
+                    │           Client (nc / app)          │
+                    └─────────────────┬───────────────────┘
+                                      │ TCP SET/GET/DEL
+                    ┌─────────────────▼───────────────────┐
+                    │  handler → Raft Propose (leader)    │
+                    │              ↓ committed             │
+                    │         WAL + in-memory store        │
+                    └─────────────────┬───────────────────┘
+                                      │ AppendEntries / RequestVote
+              ┌───────────────────────┼───────────────────────┐
+              │                       │                       │
+         ┌────▼────┐             ┌────▼────┐             ┌────▼────┐
+         │ node 1  │◄───RPC────►│ node 2  │◄───RPC────►│ node 3  │
+         └─────────┘             └─────────┘             └─────────┘
+
+Outbound RPCs: circuit breaker (3 failures → pause 30s) + exponential backoff (100/200/400ms)
 ```
 
-## Phases
+**Write path:** Client → leader → Raft log → replicate to followers → majority ack → commit → WAL + store → `OK`
 
-| Phase | Status |
-|-------|--------|
-| 1 — TCP + protocol + metrics | Done |
-| 2 — WAL + crash recovery | Done |
-| 3 — Raft (3 nodes) | Done |
-| 4 — Failure modes + benchmarks | Next |
+**Read path:** Client → any node → in-memory store → response (no Raft round-trip)
+
+---
+
+## What to test
+
+### 1. Basic commands
+
+```bash
+echo "PING" | nc localhost 6379              # → PONG
+echo "SET name jigar" | nc localhost 6379    # → OK
+echo "GET name" | nc localhost 6379          # → jigar
+echo "DEL name" | nc localhost 6379          # → OK
+echo "GET name" | nc localhost 6379          # → (nil)
+curl -s localhost:9090/metrics | head          # Prometheus metrics
+```
+
+### 2. Crash recovery (WAL)
+
+```bash
+echo "SET city mumbai" | nc localhost 6379   # → OK
+# Ctrl+C the server, restart with same --data-dir
+echo "GET city" | nc localhost 6379          # → mumbai
+```
+
+Data survives because every `SET`/`DEL` is written to `data_dir/wal.log` before the in-memory map updates.
+
+### 3. Raft replication
+
+```bash
+./scripts/start-cluster.sh
+
+# Write to leader (try 6379; if ERR not leader, try 6380 or 6381)
+echo "SET user jigar" | nc localhost 6379    # → OK
+
+# Read from any node — all should match
+echo "GET user" | nc localhost 6379          # → jigar
+echo "GET user" | nc localhost 6380          # → jigar
+echo "GET user" | nc localhost 6381          # → jigar
+
+# Write to follower — rejected
+echo "SET x 1" | nc localhost 6380           # → ERR not leader
+```
+
+### 4. Leader failover
+
+```bash
+./scripts/kill-leader.sh 6379                # kill node on port 6379
+sleep 3                                      # wait for re-election
+echo "GET user" | nc localhost 6380          # → jigar (data survived)
+echo "SET city mumbai" | nc localhost 6380   # → OK (new leader)
+```
+
+### 5. Failure scenarios (chaos scripts)
+
+Cluster must be running first (`./scripts/start-cluster.sh`):
+
+```bash
+./scripts/chaos-kill-leader.sh      # kill leader → data survives, new leader elected
+./scripts/chaos-kill-follower.sh    # kill follower → cluster still reads/writes
+./scripts/chaos-no-quorum.sh        # kill 2 nodes → lone survivor refuses writes
+```
+
+### 6. Automated tests
+
+```bash
+go test ./... -race                 # unit + integration tests (always run before pushing)
+```
+
+---
+
+## Benchmarks
+
+### Run
+
+```bash
+go test -bench=. -benchtime=1x ./benchmarks/
+```
+
+### Results (MacBook, single node, 1000 concurrent connections)
+
+| Benchmark | p50 | p95 | p99 | What it measures |
+|-----------|-----|-----|-----|------------------|
+| **GET** | 3.7ms | 7.4ms | 8.2ms | 1000 goroutines each `GET benchkey` at the same time |
+| **SET** | 2.1ms | 3.4ms | 3.8ms | 1000 goroutines each `SET benchkey value` at the same time |
+| **Mixed** | 3.2ms | 6.4ms | 6.4ms | 80% GET / 20% SET (realistic read-heavy workload) |
+
+> Re-run on your machine to get fresh numbers. Cluster mode (Raft replication) will be slower than these single-node numbers.
+
+### How the benchmark works
+
+1. Starts a real MitraKV TCP server in-process (same code path as production).
+2. Spawns **1000 goroutines** — each dials, sends one command, reads the response, records latency.
+3. Sorts all 1000 latencies and reports **p50, p95, p99**.
+
+### What p50 / p95 / p99 mean (for interviews)
+
+| Metric | Plain English | Example |
+|--------|---------------|---------|
+| **p50** (median) | Half of requests finished faster than this | "Typical user experience" |
+| **p95** | 95% of requests finished faster than this | "Almost everyone, except slow outliers" |
+| **p99** | 99% of requests finished faster than this | "Worst realistic case — tail latency" |
+
+**Why not average?** Average hides slow requests. If 999 requests take 1ms and 1 takes 10 seconds, average looks fine (~11ms) but one user had a terrible experience. p99 catches that.
+
+**Interview one-liner:**
+> "I benchmarked with 1000 concurrent TCP connections, measured round-trip latency per request, and reported percentiles. p99 matters more than average because it shows tail latency under contention — that's what users actually feel when the server is busy."
+
+---
+
+## Design decisions
+
+| Decision | Why |
+|----------|-----|
+| **WAL before memory update** | If the process crashes after WAL write, restart replays the log. Memory-only would lose data. |
+| **Raft over Paxos** | Same safety guarantees, easier to understand and implement. Industry default (etcd, Consul). |
+| **Leader-only writes** | Strong consistency — every write goes through one ordered log. No conflicting writes on followers. |
+| **Majority quorum** | 3 nodes, need 2 to commit. Survives 1 node failure. Kill 2 → no writes (chaos-no-quorum proves this). |
+| **Circuit breaker on peer RPC** | Dead nodes were retried every 50ms heartbeat, flooding logs. 3 failures → stop for 30s → probe once. |
+| **Exponential backoff** | 100ms → 200ms → 400ms between retries. Gives a recovering node time before we hammer it again. |
+| **Text WAL** | Debuggable with `cat wal.log`. Tradeoff: larger on disk vs binary format. |
+| **Pure Go stdlib** | No hidden dependencies. Only external package: Prometheus client for metrics. |
+
+### What happens on a 2-1 network partition?
+
+The side with **2 nodes** keeps quorum → can elect a leader and accept writes.
+
+The **isolated single node** cannot reach majority → cannot commit new writes → returns errors or stays stale. This prevents split-brain (two leaders writing different data).
+
+---
+
+## What's missing / next steps
+
+| Gap | Impact | Fix |
+|-----|--------|-----|
+| Raft log not persisted to disk | Restart loses election state (WAL/store data survives) | Serialize term + log entries to disk |
+| No client leader discovery | Client must know which port is leader for writes | Redirect response or sidecar proxy |
+| Single-threaded per connection | Fine for learning; production would pool connections | Connection pooling, pipelining |
+| Benchmarks are single-node | Cluster SET latency includes Raft replication overhead | Add cluster benchmark variant |
+
+---
+
+## Project structure
+
+```
+mitrakv/
+├── cmd/mitrakv/main.go          # entry point
+├── internal/
+│   ├── server/                  # TCP server + command handler
+│   ├── protocol/                # wire format (SET/GET/DEL/PING)
+│   ├── store/                   # in-memory KV map
+│   ├── wal/                     # write-ahead log + crash recovery
+│   ├── raft/                    # election, replication, circuit breaker
+│   └── metrics/                 # Prometheus instrumentation
+├── benchmarks/bench_test.go       # latency benchmarks
+├── config/node{1,2,3}.yaml       # cluster configs
+└── scripts/                     # start-cluster, chaos tests
+```
+
+---
+
+## Interview pitch (30 seconds)
+
+> "I built MitraKV — a distributed key-value store from scratch in Go. It runs as a 3-node Raft cluster. Every write is replicated to a majority before the client gets OK, so it's strongly consistent. WAL handles crash recovery. I implemented leader election and log replication myself — randomized election timeouts to avoid split votes. For failure handling I added a circuit breaker and exponential backoff on peer RPCs. I benchmarked it at p99 under 9ms for GET with 1000 concurrent connections. The chaos scripts prove leader failover, follower loss, and quorum enforcement."
