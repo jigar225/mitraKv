@@ -152,7 +152,7 @@ func startRaftNode(
 	raftPort int,
 ) *raft.Node {
 	node := raft.NewNode(raft.Config{NodeID: nodeID, Peers: peerIDs})
-	node.SetTransport(raft.NewTCPTransport(peerAddrs))
+	node.SetTransport(raft.NewResilientTransport(raft.NewTCPTransport(peerAddrs)))
 	node.SetApplier(func(cmd raft.Command) {
 		applyCommand(writeAheadLog, st, cmd)
 	})
