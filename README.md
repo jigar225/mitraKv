@@ -161,7 +161,7 @@ go test -bench=. -benchtime=1x ./benchmarks/
 2. Spawns **1000 goroutines** — each dials, sends one command, reads the response, records latency.
 3. Sorts all 1000 latencies and reports **p50, p95, p99**.
 
-### What p50 / p95 / p99 mean (for interviews)
+### What p50 / p95 / p99 mean 
 
 | Metric | Plain English | Example |
 |--------|---------------|---------|
@@ -170,9 +170,6 @@ go test -bench=. -benchtime=1x ./benchmarks/
 | **p99** | 99% of requests finished faster than this | "Worst realistic case — tail latency" |
 
 **Why not average?** Average hides slow requests. If 999 requests take 1ms and 1 takes 10 seconds, average looks fine (~11ms) but one user had a terrible experience. p99 catches that.
-
-**Interview one-liner:**
-> "I benchmarked with 1000 concurrent TCP connections, measured round-trip latency per request, and reported percentiles. p99 matters more than average because it shows tail latency under contention — that's what users actually feel when the server is busy."
 
 ---
 
