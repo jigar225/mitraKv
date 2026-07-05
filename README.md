@@ -197,17 +197,6 @@ The **isolated single node** cannot reach majority → cannot commit new writes 
 
 ---
 
-## What's missing / next steps
-
-| Gap | Impact | Fix |
-|-----|--------|-----|
-| Raft log not persisted to disk | Restart loses election state (WAL/store data survives) | Serialize term + log entries to disk |
-| No client leader discovery | Client must know which port is leader for writes | Redirect response or sidecar proxy |
-| Single-threaded per connection | Fine for learning; production would pool connections | Connection pooling, pipelining |
-| Benchmarks are single-node | Cluster SET latency includes Raft replication overhead | Add cluster benchmark variant |
-
----
-
 ## Project structure
 
 ```
@@ -224,9 +213,3 @@ mitrakv/
 ├── config/node{1,2,3}.yaml       # cluster configs
 └── scripts/                     # start-cluster, chaos tests
 ```
-
----
-
-## Interview pitch (30 seconds)
-
-> "I built MitraKV — a distributed key-value store from scratch in Go. It runs as a 3-node Raft cluster. Every write is replicated to a majority before the client gets OK, so it's strongly consistent. WAL handles crash recovery. I implemented leader election and log replication myself — randomized election timeouts to avoid split votes. For failure handling I added a circuit breaker and exponential backoff on peer RPCs. I benchmarked it at p99 under 9ms for GET with 1000 concurrent connections. The chaos scripts prove leader failover, follower loss, and quorum enforcement."
