@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mitrakv-config
+data:
+  # Each pod selects its own file by hostname: mitrakv-0/1/2.
+  # Peer addresses must be pod DNS names (not 127.0.0.1) in Kubernetes.
+  mitrakv-0.yaml: |
+    node_id: mitrakv-0
+    client_port: 6379
+    raft_port: 7379
+    metrics_port: 9090
+    data_dir: /data
+    peers:
+      - mitrakv-0: mitrakv-0.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-1: mitrakv-1.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-2: mitrakv-2.mitrakv-headless.default.svc.cluster.local:7379
+
+  mitrakv-1.yaml: |
+    node_id: mitrakv-1
+    client_port: 6379
+    raft_port: 7379
+    metrics_port: 9090
+    data_dir: /data
+    peers:
+      - mitrakv-0: mitrakv-0.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-1: mitrakv-1.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-2: mitrakv-2.mitrakv-headless.default.svc.cluster.local:7379
+
+  mitrakv-2.yaml: |
+    node_id: mitrakv-2
+    client_port: 6379
+    raft_port: 7379
+    metrics_port: 9090
+    data_dir: /data
+    peers:
+      - mitrakv-0: mitrakv-0.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-1: mitrakv-1.mitrakv-headless.default.svc.cluster.local:7379
+      - mitrakv-2: mitrakv-2.mitrakv-headless.default.svc.cluster.local:7379
