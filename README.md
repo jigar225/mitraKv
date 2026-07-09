@@ -42,6 +42,44 @@ Stop the cluster with `Ctrl+C` in the terminal running `start-cluster.sh`.
 
 ---
 
+## Run on Kubernetes
+
+Prerequisite: Docker Desktop with Kubernetes enabled.
+
+```bash
+docker build -t mitrakv:local .
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/headless-service.yaml
+kubectl apply -f k8s/statefulset.yaml
+kubectl get pods -w
+```
+
+You should see `mitrakv-0`, `mitrakv-1`, and `mitrakv-2` in `Running` state.
+
+### Test commands against all 3 pods
+
+Open three terminals:
+
+```bash
+kubectl port-forward pod/mitrakv-0 6379:6379
+kubectl port-forward pod/mitrakv-1 6380:6379
+kubectl port-forward pod/mitrakv-2 6381:6379
+```
+
+Then run client commands:
+
+```bash
+echo "PING" | nc localhost 6379
+echo "SET user jigar" | nc localhost 6379   # if not leader, try 6380 or 6381
+echo "GET user" | nc localhost 6379
+echo "GET user" | nc localhost 6380
+echo "GET user" | nc localhost 6381
+```
+
+Note: `Warning: spec.SessionAffinity is ignored for headless services` is expected for headless Services.
+
+---
+
 ## Architecture
 
 ```
@@ -198,6 +236,7 @@ The **isolated single node** cannot reach majority → cannot commit new writes 
 
 ```
 mitrakv/
+├── Dockerfile                   # container image build
 ├── cmd/mitrakv/main.go          # entry point
 ├── internal/
 │   ├── server/                  # TCP server + command handler
@@ -208,5 +247,6 @@ mitrakv/
 │   └── metrics/                 # Prometheus instrumentation
 ├── benchmarks/bench_test.go       # latency benchmarks
 ├── config/node{1,2,3}.yaml       # cluster configs
+├── k8s/                          # kubernetes manifests (configmap/service/statefulset)
 └── scripts/                     # start-cluster, chaos tests
 ```
