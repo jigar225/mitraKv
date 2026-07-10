@@ -46,8 +46,34 @@ Stop the cluster with `Ctrl+C` in the terminal running `start-cluster.sh`.
 
 Prerequisite: Docker Desktop with Kubernetes enabled.
 
+Build the image first (both options below use `mitrakv:local`):
+
 ```bash
 docker build -t mitrakv:local .
+```
+
+### Option A: Helm chart (recommended)
+
+```bash
+helm install mitrakv ./mitrakv-chart
+kubectl get pods -w
+```
+
+Upgrade after chart changes:
+
+```bash
+helm upgrade mitrakv ./mitrakv-chart
+```
+
+Uninstall:
+
+```bash
+helm uninstall mitrakv
+```
+
+### Option B: Raw manifests
+
+```bash
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/headless-service.yaml
 kubectl apply -f k8s/statefulset.yaml
@@ -247,6 +273,7 @@ mitrakv/
 │   └── metrics/                 # Prometheus instrumentation
 ├── benchmarks/bench_test.go       # latency benchmarks
 ├── config/node{1,2,3}.yaml       # cluster configs
-├── k8s/                          # kubernetes manifests (configmap/service/statefulset)
+├── k8s/                          # raw kubernetes manifests
+├── mitrakv-chart/                # helm chart (configmap/service/statefulset templates)
 └── scripts/                     # start-cluster, chaos tests
 ```
