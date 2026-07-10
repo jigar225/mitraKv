@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mitrakv
+spec:
+  serviceName: mitrakv-headless
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: mitrakv
+  template:
+    metadata:
+      labels:
+        app: mitrakv
+    spec:
+      containers:
+        - name: mitrakv
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: Never    
+          command:
+            - /bin/sh
+            - -c
+            - exec /usr/local/bin/mitrakv --config /etc/mitrakv/$(hostname).yaml
+          ports:
+            - containerPort: 6379
+              name: client
+            - containerPort: 7379
+              name: raft
+            - containerPort: 9090
+              name: metrics
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mitrakv
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: mitrakv-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

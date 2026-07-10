@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mitrakv-config
+data:
+{{- range $i := until (int .Values.replicaCount) }}
+  mitrakv-{{ $i }}.yaml: |
+    node_id: mitrakv-{{ $i }}
+    client_port: 6379
+    raft_port: 7379
+    metrics_port: 9090
+    data_dir: /data
+    peers:
+{{- range $j := until (int $.Values.replicaCount) }}
+      - mitrakv-{{ $j }}: mitrakv-{{ $j }}.mitrakv-headless.default.svc.cluster.local:7379
+{{- end }}
+{{- end }}
